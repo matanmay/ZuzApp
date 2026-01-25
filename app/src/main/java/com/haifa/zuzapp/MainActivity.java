@@ -39,7 +39,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private String currentSessionId;
 
     // Threshold to ignore tiny vibrations and force 0.0
-    private static final float MOVEMENT_THRESHOLD = 0.5f;
+    private static final float MOVEMENT_THRESHOLD = 0.11f;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -154,13 +154,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             if (delta < MOVEMENT_THRESHOLD) {
                 delta = 0.0f;
             }
+//
+//            else{
+                // Update UI
+                tvSensorData.setText(String.format("Movement Delta: %.2f", delta));
 
-            // Update UI
-            tvSensorData.setText(String.format("Movement Delta: %.2f", delta));
-
-            // Log Data
-            String expCode = etExperimenterCode.getText().toString();
-            logger.logMovement(currentSessionId, expCode, delta);
+                // Log Data
+                String expCode = etExperimenterCode.getText().toString();
+                logger.logMovement(currentSessionId, expCode, delta);
+//            }
         }
     }
 

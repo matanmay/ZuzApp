@@ -21,8 +21,7 @@ import com.google.firebase.firestore.DocumentReference;
 public class MovementLogger {
 
     private static final String TAG = "MovementLogger";
-    private static final String CSV_HEADER =
-            "SessionID,ExperimenterCode,Timestamp,ElapsedTimeMs,Magnitude\n";
+    private static final String CSV_HEADER = "SessionID,ExperimenterCode,Timestamp,ElapsedTimeMs,Magnitude\n";
     private static final int BATCH_SIZE = 20;
 
     private File currentLogFile;
@@ -32,6 +31,7 @@ public class MovementLogger {
     private FirebaseFirestore db;
     private List<Map<String, Object>> logBuffer;
 
+    // Track the last value sent to Firebase to avoid duplicates
     private float lastFirebaseDelta = -1.0f;
 
     public MovementLogger() {
@@ -39,10 +39,16 @@ public class MovementLogger {
         logBuffer = new ArrayList<>();
     }
 
-    public void startSession(Context context) throws IOException {
-        String timeStamp =
-                new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
-        String fileName = "Experiment_" + timeStamp + ".csv";
+    /**
+     * Starts the session and creates the CSV file with the specific naming convention:
+     * SubjectName__SessionID__Date_Time.csv
+     */
+    public void startSession(Context context, String subjectName, String sessionId) throws IOException {
+        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+
+        // Construct the filename: Subject__Session__Timestamp.csv
+        // Note: Ensure subjectName does not contain illegal characters for filenames (like / or :)
+        String fileName = subjectName + "__" + sessionId + "__" + timeStamp + ".csv";
 
         File directory = context.getFilesDir();
         currentLogFile = new File(directory, fileName);
@@ -54,26 +60,23 @@ public class MovementLogger {
         sessionStartTime = System.currentTimeMillis();
         logBuffer.clear();
 
+        // Reset the last delta so the first record is always logged to Firebase
         lastFirebaseDelta = -1.0f;
 
-        Log.d(TAG, "Session started: " + currentLogFile.getAbsolutePath());
+        Log.d(TAG, "Session started. File created: " + currentLogFile.getAbsolutePath());
     }
 
-    public void logMovement(String sessionId,
-                            String experimenterCode,
-                            float magnitude) {
+    public void logMovement(String sessionId, String experimenterCode, float magnitude) {
 
         long currentTime = System.currentTimeMillis();
         long elapsedTime = currentTime - sessionStartTime;
-        String timeString =
-                new SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
-                        .format(new Date(currentTime));
+        String timeString = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(new Date(currentTime));
 
-        // 1. Write to local CSV file
+        // ---------------------------------------------------------
+        // 1. Write to local CSV file (ALWAYS write, even if 0.0)
+        // ---------------------------------------------------------
         if (writer != null) {
-            String entry = String.format(
-                    Locale.US,
-                    "%s,%s,%s,%d,%.4f\n",
+            String entry = String.format(Locale.US, "%s,%s,%s,%d,%.4f\n",
                     sessionId,
                     experimenterCode,
                     timeString,
@@ -88,7 +91,10 @@ public class MovementLogger {
             }
         }
 
-        // 2. Add record to Firebase buffer
+        // ---------------------------------------------------------
+        // 2. Upload to Firebase (ONLY if delta changed)
+        // ---------------------------------------------------------
+        // We compare the current magnitude with the last one sent to Firebase.
         if (Float.compare(magnitude, lastFirebaseDelta) != 0) {
 
             Map<String, Object> record = new HashMap<>();
@@ -101,63 +107,40 @@ public class MovementLogger {
 
             logBuffer.add(record);
 
-            // update the delta
+            // Update the last logged value
             lastFirebaseDelta = magnitude;
 
-            // batch test
+            // Upload batch if buffer reached threshold
             if (logBuffer.size() >= BATCH_SIZE) {
                 uploadBuffer(sessionId);
             }
         }
     }
 
-    // Upload buffered records to Firebase using a batch write
     private void uploadBuffer(String sessionId) {
         if (logBuffer.isEmpty()) return;
 
         WriteBatch batch = db.batch();
-
-        // Create a safe copy in case new logs arrive during upload
-        List<Map<String, Object>> recordsToUpload =
-                new ArrayList<>(logBuffer);
-
-        // Clear main buffer immediately
+        List<Map<String, Object>> recordsToUpload = new ArrayList<>(logBuffer);
         logBuffer.clear();
 
         for (Map<String, Object> data : recordsToUpload) {
-
-            // Retrieve experimenter code from the stored data
             String expCode = (String) data.get("experimenterCode");
+            if (expCode == null) expCode = "Unknown_Experiment";
 
-            // Fallback protection (should not normally occur)
-            if (expCode == null) {
-                expCode = "Unknown_Experiment";
-            }
-
-            /*
-             * Firestore structure:
-             * experiments/{experimenterCode}/
-             *      sessions/{sessionId}/
-             *          records/{autoId}
-             */
-            DocumentReference docRef =
-                    db.collection("experiments")
-                            .document(expCode)
-                            .collection("sessions")
-                            .document(sessionId)
-                            .collection("records")
-                            .document();
+            DocumentReference docRef = db.collection("experiments")
+                    .document(expCode)
+                    .collection("sessions")
+                    .document(sessionId)
+                    .collection("records")
+                    .document();
 
             batch.set(docRef, data);
         }
 
         batch.commit()
-                .addOnSuccessListener(
-                        aVoid -> Log.d(TAG,
-                                "Batch successfully saved to Firebase"))
-                .addOnFailureListener(
-                        e -> Log.e(TAG,
-                                "Error saving batch to Firebase", e));
+                .addOnSuccessListener(aVoid -> Log.d(TAG, "Batch successfully saved to Firebase"))
+                .addOnFailureListener(e -> Log.e(TAG, "Error saving batch to Firebase", e));
     }
 
     public void stopSession() {
@@ -167,11 +150,9 @@ public class MovementLogger {
                 writer = null;
             }
 
-            // Upload any remaining buffered logs
+            // Upload any remaining buffered logs before stopping
             if (!logBuffer.isEmpty()) {
-                // Retrieve sessionId from the first buffered record
-                String sessionId =
-                        (String) logBuffer.get(0).get("sessionId");
+                String sessionId = (String) logBuffer.get(0).get("sessionId");
                 uploadBuffer(sessionId);
             }
 
@@ -182,8 +163,6 @@ public class MovementLogger {
     }
 
     public String getFilePath() {
-        return currentLogFile != null
-                ? currentLogFile.getAbsolutePath()
-                : "Unknown";
+        return currentLogFile != null ? currentLogFile.getAbsolutePath() : "Unknown";
     }
 }

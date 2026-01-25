@@ -24,14 +24,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     // UI Components
     private TextInputEditText etExperimenterCode;
-    private TextInputEditText etSessionId; // NEW Field
+    private TextInputEditText etSessionId;
     private Button btnToggleSession;
     private TextView tvStatus;
     private TextView tvSensorData;
 
     // Sensor Logic
     private SensorManager sensorManager;
-    private Sensor accelerometer;
+    private Sensor gyroscope;
 
     // Logging Logic
     private MovementLogger logger;
@@ -41,6 +41,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private float lastLoggedDelta = -1.0f;
 
     // Threshold to ignore tiny vibrations and force 0.0
+    // NOTE: Since we converted to degrees, this value might need adjustment.
     private static final float MOVEMENT_THRESHOLD = 0.11f;
 
     @Override
@@ -58,7 +59,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private void initializeViews() {
         etExperimenterCode = findViewById(R.id.etExperimenterCode);
-        etSessionId = findViewById(R.id.etSessionId); // Bind new view
+        etSessionId = findViewById(R.id.etSessionId);
         btnToggleSession = findViewById(R.id.btnToggleSession);
         tvStatus = findViewById(R.id.tvStatus);
         tvSensorData = findViewById(R.id.tvSensorData);
@@ -69,7 +70,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private void initializeSensors() {
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         if (sensorManager != null) {
-            accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+            gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
         }
     }
 
@@ -82,6 +83,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     private void startExperiment() {
+        // Get the Subject Name / Experimenter Code
         String code = etExperimenterCode.getText().toString().trim();
         if (code.isEmpty()) {
             etExperimenterCode.setError("Code required");
@@ -97,18 +99,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
 
         try {
-            // Start Logger
-            logger.startSession(this);
+            // Pass the context, the subject name (code), and the session ID
+            logger.startSession(this, code, currentSessionId);
 
-            // Register Sensor Listener
-            if (accelerometer != null) {
-                sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
+            if (gyroscope != null) {
+                sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
             }
 
             // UI Updates
             isRecording = true;
             etExperimenterCode.setEnabled(false);
-            etSessionId.setEnabled(false); // Lock the session ID field too
+            etSessionId.setEnabled(false);
             btnToggleSession.setText("STOP SESSION");
             btnToggleSession.setBackgroundColor(Color.RED);
             tvStatus.setText("Recording... (Session: " + currentSessionId + ")");
@@ -129,46 +130,48 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         // UI Updates
         isRecording = false;
         etExperimenterCode.setEnabled(true);
-        etSessionId.setEnabled(true); // Unlock field
+        etSessionId.setEnabled(true);
         btnToggleSession.setText("START SESSION");
         btnToggleSession.setBackgroundColor(getColor(com.google.android.material.R.color.design_default_color_primary));
 
         tvStatus.setText("Saved to: " + logger.getFilePath());
-        tvSensorData.setText("Acc: 0.00");
+        tvSensorData.setText("Gyro: 0.00 deg/s");
     }
 
     @Override
     public void onSensorChanged(SensorEvent event) {
         if (!isRecording) return;
 
-        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+        // Check that the event is from the gyroscope
+        if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
             float x = event.values[0];
             float y = event.values[1];
             float z = event.values[2];
 
-            // Calculate Magnitude (Total Acceleration)
-            double magnitude = Math.sqrt(x * x + y * y + z * z);
+            // 1. Calculate Total Velocity Magnitude (Result is in Radians per Second)
+            double magnitudeRad = Math.sqrt(x * x + y * y + z * z);
 
-            // Subtract gravity (~9.81 m/s^2)
-            float delta = (float) Math.abs(magnitude - 9.81);
+            // 2. Convert from Radians to Degrees
+            double magnitudeDeg = Math.toDegrees(magnitudeRad);
 
-            // NEW LOGIC: Filter noise. If below threshold, set strictly to 0.0
+            float delta = (float) magnitudeDeg;
+
+            // Optional: Noise filtering
+            // If you use this, you might need to increase MOVEMENT_THRESHOLD
+            // because 0.11 degrees/second is very small.
+            /*
             if (delta < MOVEMENT_THRESHOLD) {
                 delta = 0.0f;
             }
-//
-//            if (Float.compare(delta, lastLoggedDelta) != 0) {
+            */
 
-                // update UI
-                tvSensorData.setText(String.format("Movement Delta: %.2f", delta));
+            // Update the UI
+            tvSensorData.setText(String.format("Gyro Delta: %.2f deg/s", delta));
 
-                // Sending to loger
-                String expCode = etExperimenterCode.getText().toString();
-                logger.logMovement(currentSessionId, expCode, delta);
+            String expCode = etExperimenterCode.getText().toString();
+            logger.logMovement(currentSessionId, expCode, delta);
 
-                // update the last value
-                lastLoggedDelta = delta;
-//            }
+            lastLoggedDelta = delta;
         }
     }
 

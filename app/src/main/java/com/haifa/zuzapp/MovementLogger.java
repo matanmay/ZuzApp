@@ -32,6 +32,8 @@ public class MovementLogger {
     private FirebaseFirestore db;
     private List<Map<String, Object>> logBuffer;
 
+    private float lastFirebaseDelta = -1.0f;
+
     public MovementLogger() {
         db = FirebaseFirestore.getInstance();
         logBuffer = new ArrayList<>();
@@ -51,6 +53,8 @@ public class MovementLogger {
 
         sessionStartTime = System.currentTimeMillis();
         logBuffer.clear();
+
+        lastFirebaseDelta = -1.0f;
 
         Log.d(TAG, "Session started: " + currentLogFile.getAbsolutePath());
     }
@@ -85,20 +89,25 @@ public class MovementLogger {
         }
 
         // 2. Add record to Firebase buffer
-        Map<String, Object> record = new HashMap<>();
-        record.put("sessionId", sessionId);
-        record.put("experimenterCode", experimenterCode);
-        record.put("timestamp", timeString);
-        record.put("elapsedTimeMs", elapsedTime);
-        record.put("magnitude", magnitude);
-        record.put("serverTimestamp",
-                com.google.firebase.Timestamp.now());
+        if (Float.compare(magnitude, lastFirebaseDelta) != 0) {
 
-        logBuffer.add(record);
+            Map<String, Object> record = new HashMap<>();
+            record.put("sessionId", sessionId);
+            record.put("experimenterCode", experimenterCode);
+            record.put("timestamp", timeString);
+            record.put("elapsedTimeMs", elapsedTime);
+            record.put("magnitude", magnitude);
+            record.put("serverTimestamp", com.google.firebase.Timestamp.now());
 
-        // 3. Upload batch if buffer reached threshold
-        if (logBuffer.size() >= BATCH_SIZE) {
-            uploadBuffer(sessionId);
+            logBuffer.add(record);
+
+            // update the delta
+            lastFirebaseDelta = magnitude;
+
+            // batch test
+            if (logBuffer.size() >= BATCH_SIZE) {
+                uploadBuffer(sessionId);
+            }
         }
     }
 

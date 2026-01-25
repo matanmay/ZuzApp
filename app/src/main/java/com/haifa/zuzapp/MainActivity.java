@@ -38,6 +38,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private boolean isRecording = false;
     private String currentSessionId;
 
+    private float lastLoggedDelta = -1.0f;
+
     // Threshold to ignore tiny vibrations and force 0.0
     private static final float MOVEMENT_THRESHOLD = 0.11f;
 
@@ -155,13 +157,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 delta = 0.0f;
             }
 //
-//            else{
-                // Update UI
+//            if (Float.compare(delta, lastLoggedDelta) != 0) {
+
+                // update UI
                 tvSensorData.setText(String.format("Movement Delta: %.2f", delta));
 
-                // Log Data
+                // Sending to loger
                 String expCode = etExperimenterCode.getText().toString();
                 logger.logMovement(currentSessionId, expCode, delta);
+
+                // update the last value
+                lastLoggedDelta = delta;
 //            }
         }
     }

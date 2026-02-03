@@ -4,75 +4,116 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="24dp"
+    android:padding="16dp"
     android:gravity="center_horizontal">
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="ZuzApp Experiment"
+        android:text="Movement Tracking App"
         android:textSize="24sp"
         android:textStyle="bold"
-        android:layout_marginBottom="32dp"/>
+        android:layout_marginBottom="24dp"/>
+
+    <!-- Calibration Status -->
+    <TextView
+        android:id="@+id/tvCalibrationStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Not calibrated"
+        android:textSize="14sp"
+        android:textColor="#999999"
+        android:padding="8dp"
+        android:background="#F5F5F5"
+        android:gravity="center"
+        android:layout_marginBottom="16dp"/>
+
+    <!-- Calibrate Button -->
+    <Button
+        android:id="@+id/btnCalibrate"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="CALIBRATE GYROSCOPE"
+        android:textSize="14sp"
+        android:layout_marginBottom="24dp"
+        android:backgroundTint="#2196F3"/>
 
     <!-- Experimenter Code Input -->
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Experimenter Code"
-        app:endIconMode="clear_text">
+        android:hint="Experimenter Code / Subject Name"
+        android:layout_marginBottom="16dp"
+        app:boxBackgroundMode="outline">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etExperimenterCode"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="textCapCharacters|textNoSuggestions"
-            android:imeOptions="actionNext"
-            android:importantForAutofill="no"/>
+            android:inputType="text"
+            android:maxLines="1"/>
     </com.google.android.material.textfield.TextInputLayout>
 
     <!-- Session ID Input -->
-    <!-- Changed ID to etSessionId to match Java logic -->
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:hint="Session ID (Optional)"
-        app:endIconMode="clear_text">
+        android:hint="Session ID (optional - auto-generated if empty)"
+        android:layout_marginBottom="24dp"
+        app:boxBackgroundMode="outline">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etSessionId"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="textCapCharacters|textNoSuggestions"
-            android:imeOptions="actionDone"
-            android:importantForAutofill="no"/>
+            android:inputType="text"
+            android:maxLines="1"/>
     </com.google.android.material.textfield.TextInputLayout>
 
+    <!-- Start/Stop Session Button -->
     <Button
         android:id="@+id/btnToggleSession"
         android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:text="Start Session"
-        android:layout_marginTop="24dp"
-        android:backgroundTint="@color/design_default_color_primary"/>
+        android:layout_height="64dp"
+        android:text="START SESSION"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="24dp"/>
 
+    <!-- Status Display -->
     <TextView
         android:id="@+id/tvStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:text="Status: Idle"
-        android:textAlignment="center"
-        android:textSize="16sp"/>
+        android:text="Ready to start"
+        android:textSize="16sp"
+        android:padding="12dp"
+        android:background="#E8F5E9"
+        android:gravity="center"
+        android:layout_marginBottom="16dp"/>
 
+    <!-- Sensor Data Display -->
     <TextView
         android:id="@+id/tvSensorData"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:text="Gyro: 0.00 deg/s"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:padding="16dp"
+        android:background="#F5F5F5"
+        android:gravity="center"
+        android:fontFamily="monospace"/>
+
+    <!-- Instructions -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Instructions:\n1. Calibrate the gyroscope while keeping device still\n2. Enter experimenter code\n3. Press START SESSION to begin recording\n4. Press STOP SESSION to save data"
+        android:textSize="12sp"
+        android:textColor="#666666"
+        android:padding="16dp"
         android:layout_marginTop="16dp"
-        android:fontFamily="monospace"
-        android:text="Acc: 0.00"
-        android:textAlignment="center"/>
+        android:gravity="start"/>
 
 </LinearLayout>

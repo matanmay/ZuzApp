@@ -26,8 +26,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private TextInputEditText etExperimenterCode;
     private TextInputEditText etSessionId;
     private Button btnToggleSession;
+    private Button btnCalibrate;
     private TextView tvStatus;
     private TextView tvSensorData;
+    private TextView tvCalibrationStatus;
 
     // Sensor Logic
     private SensorManager sensorManager;
@@ -40,9 +42,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private float lastLoggedDelta = -1.0f;
 
-    // Threshold to ignore tiny vibrations and force 0.0
-    // NOTE: Since we converted to degrees, this value might need adjustment.
-    private static final float MOVEMENT_THRESHOLD = 0.11f;
+    // Calibration variables
+    private float baselineNoise = 0.0f;
+    private boolean isCalibrating = false;
+    private int calibrationSamples = 0;
+    private float calibrationSum = 0.0f;
+    private static final int CALIBRATION_SAMPLE_COUNT = 50;
+
+    // Threshold to filter noise (applied after baseline subtraction)
+    private static final float MOVEMENT_THRESHOLD = 0.5f;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -55,22 +63,91 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         initializeViews();
         initializeSensors();
         logger = new MovementLogger();
+
+        // Auto-calibrate on startup
+        startCalibration();
     }
 
     private void initializeViews() {
         etExperimenterCode = findViewById(R.id.etExperimenterCode);
         etSessionId = findViewById(R.id.etSessionId);
         btnToggleSession = findViewById(R.id.btnToggleSession);
+        btnCalibrate = findViewById(R.id.btnCalibrate);
         tvStatus = findViewById(R.id.tvStatus);
         tvSensorData = findViewById(R.id.tvSensorData);
+        tvCalibrationStatus = findViewById(R.id.tvCalibrationStatus);
 
         btnToggleSession.setOnClickListener(v -> toggleSession());
+
+        // Add calibration button listener
+        if (btnCalibrate != null) {
+            btnCalibrate.setOnClickListener(v -> {
+                if (!isRecording) {
+                    startCalibration();
+                } else {
+                    Toast.makeText(this, "Cannot calibrate during recording", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
     }
 
     private void initializeSensors() {
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         if (sensorManager != null) {
             gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+            if (gyroscope == null) {
+                Toast.makeText(this, "Gyroscope not available on this device", Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
+    private void startCalibration() {
+        if (gyroscope == null) {
+            Toast.makeText(this, "Gyroscope not available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        isCalibrating = true;
+        calibrationSamples = 0;
+        calibrationSum = 0.0f;
+
+        // Register sensor listener if not already registered
+        sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
+
+        // Update UI
+        if (tvCalibrationStatus != null) {
+            tvCalibrationStatus.setText("Calibrating... Keep device STILL!");
+            tvCalibrationStatus.setTextColor(Color.parseColor("#FF9800")); // Orange
+        }
+
+        Toast.makeText(this, "Calibrating... Keep device still!", Toast.LENGTH_SHORT).show();
+
+        if (btnCalibrate != null) {
+            btnCalibrate.setEnabled(false);
+        }
+    }
+
+    private void finishCalibration() {
+        baselineNoise = calibrationSum / CALIBRATION_SAMPLE_COUNT;
+        isCalibrating = false;
+
+        // Update UI
+        if (tvCalibrationStatus != null) {
+            tvCalibrationStatus.setText(String.format("Calibrated! Baseline: %.2f deg/s", baselineNoise));
+            tvCalibrationStatus.setTextColor(Color.parseColor("#4CAF50")); // Green
+        }
+
+        Toast.makeText(this,
+                String.format("Calibration complete! Baseline: %.2f deg/s", baselineNoise),
+                Toast.LENGTH_LONG).show();
+
+        if (btnCalibrate != null) {
+            btnCalibrate.setEnabled(true);
+        }
+
+        // Unregister sensor if not recording
+        if (!isRecording) {
+            sensorManager.unregisterListener(this);
         }
     }
 
@@ -83,6 +160,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     private void startExperiment() {
+        // Check if calibration has been done
+        if (baselineNoise == 0.0f && !isCalibrating) {
+            Toast.makeText(this, "Please wait for calibration to complete", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         // Get the Subject Name / Experimenter Code
         String code = etExperimenterCode.getText().toString().trim();
         if (code.isEmpty()) {
@@ -104,6 +187,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             if (gyroscope != null) {
                 sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
+            } else {
+                Toast.makeText(this, "Gyroscope not available", Toast.LENGTH_SHORT).show();
+                return;
             }
 
             // UI Updates
@@ -113,6 +199,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             btnToggleSession.setText("STOP SESSION");
             btnToggleSession.setBackgroundColor(Color.RED);
             tvStatus.setText("Recording... (Session: " + currentSessionId + ")");
+
+            if (btnCalibrate != null) {
+                btnCalibrate.setEnabled(false);
+            }
 
         } catch (Exception e) {
             Toast.makeText(this, "Error starting: " + e.getMessage(), Toast.LENGTH_SHORT).show();
@@ -136,12 +226,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         tvStatus.setText("Saved to: " + logger.getFilePath());
         tvSensorData.setText("Gyro: 0.00 deg/s");
+
+        if (btnCalibrate != null) {
+            btnCalibrate.setEnabled(true);
+        }
     }
 
     @Override
     public void onSensorChanged(SensorEvent event) {
-        if (!isRecording) return;
-
         // Check that the event is from the gyroscope
         if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
             float x = event.values[0];
@@ -154,20 +246,45 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // 2. Convert from Radians to Degrees
             double magnitudeDeg = Math.toDegrees(magnitudeRad);
 
-            float delta = (float) magnitudeDeg;
+            float rawDelta = (float) magnitudeDeg;
 
-            // Optional: Noise filtering
-            // If you use this, you might need to increase MOVEMENT_THRESHOLD
-            // because 0.11 degrees/second is very small.
-            /*
+            // Handle Calibration Phase
+            if (isCalibrating) {
+                calibrationSum += rawDelta;
+                calibrationSamples++;
+
+                // Update progress
+                if (tvCalibrationStatus != null) {
+                    tvCalibrationStatus.setText(String.format("Calibrating... %d/%d samples",
+                            calibrationSamples, CALIBRATION_SAMPLE_COUNT));
+                }
+
+                if (calibrationSamples >= CALIBRATION_SAMPLE_COUNT) {
+                    finishCalibration();
+                }
+                return;
+            }
+
+            // If not recording, just return (but don't show data)
+            if (!isRecording) return;
+
+            // 3. Subtract baseline noise
+            float delta = rawDelta - baselineNoise;
+
+            // 4. Apply threshold to filter remaining noise
             if (delta < MOVEMENT_THRESHOLD) {
                 delta = 0.0f;
             }
-            */
+
+            // Ensure delta is not negative
+            if (delta < 0) {
+                delta = 0.0f;
+            }
 
             // Update the UI
-            tvSensorData.setText(String.format("Gyro Delta: %.2f deg/s", delta));
+            tvSensorData.setText(String.format("Gyro Delta: %.2f deg/s (Raw: %.2f)", delta, rawDelta));
 
+            // Log the movement
             String expCode = etExperimenterCode.getText().toString();
             logger.logMovement(currentSessionId, expCode, delta);
 
@@ -177,14 +294,32 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
-        // Not used
+        // Not used, but you could log accuracy changes if needed
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // If we have calibrated but not recording, we can show real-time data
+        // by registering the listener (optional)
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        if (!isRecording) {
+        // Only unregister if not recording and not calibrating
+        if (!isRecording && !isCalibrating) {
             sensorManager.unregisterListener(this);
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // Make sure to unregister listener and stop any ongoing session
+        if (isRecording) {
+            stopExperiment();
+        }
+        sensorManager.unregisterListener(this);
     }
 }

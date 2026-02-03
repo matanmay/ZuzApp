@@ -34,6 +34,11 @@ public class MovementLogger {
     // Track the last value sent to Firebase to avoid duplicates
     private float lastFirebaseDelta = -1.0f;
 
+    // Session tracking for Firestore
+    private String currentSessionId;
+    private String currentExperimenterCode;
+    private DocumentReference currentSessionDocRef;
+
     public MovementLogger() {
         db = FirebaseFirestore.getInstance();
         logBuffer = new ArrayList<>();
@@ -42,12 +47,17 @@ public class MovementLogger {
     /**
      * Starts the session and creates the CSV file with the specific naming convention:
      * SubjectName__SessionID__Date_Time.csv
+     *
+     * ALSO logs session START to Firestore
      */
     public void startSession(Context context, String subjectName, String sessionId) throws IOException {
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
 
+        // Store current session info
+        this.currentSessionId = sessionId;
+        this.currentExperimenterCode = subjectName;
+
         // Construct the filename: Subject__Session__Timestamp.csv
-        // Note: Ensure subjectName does not contain illegal characters for filenames (like / or :)
         String fileName = subjectName + "__" + sessionId + "__" + timeStamp + ".csv";
 
         File directory = context.getFilesDir();
@@ -63,7 +73,49 @@ public class MovementLogger {
         // Reset the last delta so the first record is always logged to Firebase
         lastFirebaseDelta = -1.0f;
 
+        // ======================================================
+        // LOG SESSION START TO FIRESTORE
+        // ======================================================
+        logSessionStartToFirestore(subjectName, sessionId, timeStamp);
+
         Log.d(TAG, "Session started. File created: " + currentLogFile.getAbsolutePath());
+    }
+
+    /**
+     * Log session START event to Firestore
+     */
+    private void logSessionStartToFirestore(String experimenterCode, String sessionId, String timestamp) {
+        try {
+            // Create reference to this session's document
+            currentSessionDocRef = db.collection("experiments")
+                    .document(experimenterCode)
+                    .collection("sessions")
+                    .document(sessionId);
+
+            // Prepare session start data
+            Map<String, Object> sessionData = new HashMap<>();
+            sessionData.put("sessionId", sessionId);
+            sessionData.put("experimenterCode", experimenterCode);
+            sessionData.put("startTime", timestamp);
+            sessionData.put("startTimeMillis", sessionStartTime);
+            sessionData.put("status", "started");
+            sessionData.put("deviceModel", android.os.Build.MODEL);
+            sessionData.put("androidVersion", android.os.Build.VERSION.RELEASE);
+            sessionData.put("filePath", currentLogFile.getAbsolutePath());
+            sessionData.put("createdAt", com.google.firebase.Timestamp.now());
+
+            // Write to Firestore
+            currentSessionDocRef.set(sessionData)
+                    .addOnSuccessListener(aVoid -> {
+                        Log.d(TAG, "Session START logged to Firestore successfully");
+                    })
+                    .addOnFailureListener(e -> {
+                        Log.e(TAG, "Error logging session START to Firestore", e);
+                    });
+
+        } catch (Exception e) {
+            Log.e(TAG, "Exception in logSessionStartToFirestore", e);
+        }
     }
 
     public void logMovement(String sessionId, String experimenterCode, float magnitude) {
@@ -143,17 +195,59 @@ public class MovementLogger {
                 .addOnFailureListener(e -> Log.e(TAG, "Error saving batch to Firebase", e));
     }
 
+    /**
+     * Log session END event to Firestore
+     */
+    private void logSessionEndToFirestore() {
+        if (currentSessionDocRef == null) {
+            Log.w(TAG, "No active session document reference to update");
+            return;
+        }
+
+        try {
+            long sessionEndTime = System.currentTimeMillis();
+            long sessionDuration = sessionEndTime - sessionStartTime;
+            String endTimeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+                    .format(new Date(sessionEndTime));
+
+            // Prepare session end updates
+            Map<String, Object> updates = new HashMap<>();
+            updates.put("endTime", endTimeStamp);
+            updates.put("endTimeMillis", sessionEndTime);
+            updates.put("durationMs", sessionDuration);
+            updates.put("status", "completed");
+            updates.put("updatedAt", com.google.firebase.Timestamp.now());
+
+            // Update the session document
+            currentSessionDocRef.update(updates)
+                    .addOnSuccessListener(aVoid -> {
+                        Log.d(TAG, "Session END logged to Firestore successfully");
+                    })
+                    .addOnFailureListener(e -> {
+                        Log.e(TAG, "Error logging session END to Firestore", e);
+                    });
+
+        } catch (Exception e) {
+            Log.e(TAG, "Exception in logSessionEndToFirestore", e);
+        }
+    }
+
     public void stopSession() {
         try {
-            if (writer != null) {
-                writer.close();
-                writer = null;
-            }
+            // ======================================================
+            // LOG SESSION END TO FIRESTORE
+            // ======================================================
+            logSessionEndToFirestore();
 
             // Upload any remaining buffered logs before stopping
             if (!logBuffer.isEmpty()) {
-                String sessionId = (String) logBuffer.get(0).get("sessionId");
-                uploadBuffer(sessionId);
+                uploadBuffer(currentSessionId);
+            }
+
+            // Close the CSV file writer
+            if (writer != null) {
+                writer.close();
+                writer = null;
             }
 
             Log.d(TAG, "Session stopped.");

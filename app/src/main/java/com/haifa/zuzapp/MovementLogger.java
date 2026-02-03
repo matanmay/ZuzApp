@@ -2,6 +2,8 @@ package com.haifa.zuzapp;
 
 import android.content.Context;
 import android.util.Log;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -28,8 +30,13 @@ public class MovementLogger {
     private FileWriter writer;
     private long sessionStartTime;
 
+    // Firebase
     private FirebaseFirestore db;
     private List<Map<String, Object>> logBuffer;
+
+    // Supabase
+    private SupabaseClient supabaseClient;
+    private List<JSONObject> supabaseBuffer;
 
     // Track the last value sent to Firebase to avoid duplicates
     private float lastFirebaseDelta = -1.0f;
@@ -42,13 +49,17 @@ public class MovementLogger {
     public MovementLogger() {
         db = FirebaseFirestore.getInstance();
         logBuffer = new ArrayList<>();
+
+        // Initialize Supabase
+        supabaseClient = new SupabaseClient();
+        supabaseBuffer = new ArrayList<>();
     }
 
     /**
      * Starts the session and creates the CSV file with the specific naming convention:
      * SubjectName__SessionID__Date_Time.csv
      *
-     * ALSO logs session START to Firestore
+     * ALSO logs session START to Firestore AND Supabase
      */
     public void startSession(Context context, String subjectName, String sessionId) throws IOException {
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
@@ -69,6 +80,7 @@ public class MovementLogger {
 
         sessionStartTime = System.currentTimeMillis();
         logBuffer.clear();
+        supabaseBuffer.clear();
 
         // Reset the last delta so the first record is always logged to Firebase
         lastFirebaseDelta = -1.0f;
@@ -77,6 +89,11 @@ public class MovementLogger {
         // LOG SESSION START TO FIRESTORE
         // ======================================================
         logSessionStartToFirestore(subjectName, sessionId, timeStamp);
+
+        // ======================================================
+        // LOG SESSION START TO SUPABASE
+        // ======================================================
+        logSessionStartToSupabase(subjectName, sessionId, timeStamp);
 
         Log.d(TAG, "Session started. File created: " + currentLogFile.getAbsolutePath());
     }
@@ -118,6 +135,26 @@ public class MovementLogger {
         }
     }
 
+    /**
+     * Log session START event to Supabase
+     */
+    private void logSessionStartToSupabase(String experimenterCode, String sessionId, String timestamp) {
+        try {
+            supabaseClient.insertSessionStart(
+                    sessionId,
+                    experimenterCode,
+                    timestamp,
+                    sessionStartTime,
+                    android.os.Build.MODEL,
+                    android.os.Build.VERSION.RELEASE,
+                    currentLogFile.getAbsolutePath()
+            );
+            Log.d(TAG, "Session START sent to Supabase");
+        } catch (Exception e) {
+            Log.e(TAG, "Exception in logSessionStartToSupabase", e);
+        }
+    }
+
     public void logMovement(String sessionId, String experimenterCode, float magnitude) {
 
         long currentTime = System.currentTimeMillis();
@@ -146,7 +183,6 @@ public class MovementLogger {
         // ---------------------------------------------------------
         // 2. Upload to Firebase (ONLY if delta changed)
         // ---------------------------------------------------------
-        // We compare the current magnitude with the last one sent to Firebase.
         if (Float.compare(magnitude, lastFirebaseDelta) != 0) {
 
             Map<String, Object> record = new HashMap<>();
@@ -164,12 +200,35 @@ public class MovementLogger {
 
             // Upload batch if buffer reached threshold
             if (logBuffer.size() >= BATCH_SIZE) {
-                uploadBuffer(sessionId);
+                uploadFirebaseBuffer(sessionId);
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 3. Upload to Supabase (ONLY if delta changed)
+        // ---------------------------------------------------------
+        if (Float.compare(magnitude, lastFirebaseDelta) == 0) {
+            try {
+                JSONObject supabaseRecord = new JSONObject();
+                supabaseRecord.put("session_id", sessionId);
+                supabaseRecord.put("experimenter_code", experimenterCode);
+                supabaseRecord.put("timestamp", timeString);
+                supabaseRecord.put("elapsed_time_ms", elapsedTime);
+                supabaseRecord.put("magnitude", magnitude);
+
+                supabaseBuffer.add(supabaseRecord);
+
+                // Upload batch if buffer reached threshold
+                if (supabaseBuffer.size() >= BATCH_SIZE) {
+                    uploadSupabaseBuffer();
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error preparing Supabase record", e);
             }
         }
     }
 
-    private void uploadBuffer(String sessionId) {
+    private void uploadFirebaseBuffer(String sessionId) {
         if (logBuffer.isEmpty()) return;
 
         WriteBatch batch = db.batch();
@@ -191,8 +250,26 @@ public class MovementLogger {
         }
 
         batch.commit()
-                .addOnSuccessListener(aVoid -> Log.d(TAG, "Batch successfully saved to Firebase"))
-                .addOnFailureListener(e -> Log.e(TAG, "Error saving batch to Firebase", e));
+                .addOnSuccessListener(aVoid -> Log.d(TAG, "Firebase batch successfully saved"))
+                .addOnFailureListener(e -> Log.e(TAG, "Error saving Firebase batch", e));
+    }
+
+    private void uploadSupabaseBuffer() {
+        if (supabaseBuffer.isEmpty()) return;
+
+        try {
+            JSONArray recordsArray = new JSONArray();
+            for (JSONObject record : supabaseBuffer) {
+                recordsArray.put(record);
+            }
+
+            supabaseClient.insertMovementRecords(recordsArray);
+            supabaseBuffer.clear();
+
+            Log.d(TAG, "Supabase batch uploaded");
+        } catch (Exception e) {
+            Log.e(TAG, "Error uploading Supabase batch", e);
+        }
     }
 
     /**
@@ -232,6 +309,30 @@ public class MovementLogger {
         }
     }
 
+    /**
+     * Log session END event to Supabase
+     */
+    private void logSessionEndToSupabase() {
+        try {
+            long sessionEndTime = System.currentTimeMillis();
+            long sessionDuration = sessionEndTime - sessionStartTime;
+            String endTimeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+                    .format(new Date(sessionEndTime));
+
+            supabaseClient.updateSessionEnd(
+                    currentSessionId,
+                    currentExperimenterCode,  // Pass experimenter code too
+                    endTimeStamp,
+                    sessionEndTime,
+                    sessionDuration
+            );
+
+            Log.d(TAG, "Session END sent to Supabase");
+        } catch (Exception e) {
+            Log.e(TAG, "Exception in logSessionEndToSupabase", e);
+        }
+    }
+
     public void stopSession() {
         try {
             // ======================================================
@@ -239,9 +340,18 @@ public class MovementLogger {
             // ======================================================
             logSessionEndToFirestore();
 
+            // ======================================================
+            // LOG SESSION END TO SUPABASE
+            // ======================================================
+            logSessionEndToSupabase();
+
             // Upload any remaining buffered logs before stopping
             if (!logBuffer.isEmpty()) {
-                uploadBuffer(currentSessionId);
+                uploadFirebaseBuffer(currentSessionId);
+            }
+
+            if (!supabaseBuffer.isEmpty()) {
+                uploadSupabaseBuffer();
             }
 
             // Close the CSV file writer
@@ -258,5 +368,14 @@ public class MovementLogger {
 
     public String getFilePath() {
         return currentLogFile != null ? currentLogFile.getAbsolutePath() : "Unknown";
+    }
+
+    /**
+     * Clean up resources when logger is no longer needed
+     */
+    public void cleanup() {
+        if (supabaseClient != null) {
+            supabaseClient.shutdown();
+        }
     }
 }

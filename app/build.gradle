@@ -45,6 +45,10 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:34.8.0"))
     implementation("com.google.firebase:firebase-firestore")
 
+    implementation 'io.github.jan-tennert.supabase:supabase-kt:1.3.2'
+    implementation 'io.github.jan-tennert.supabase:postgrest-kt:1.3.2'
+    implementation 'io.ktor:ktor-client-android:2.3.2'
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)

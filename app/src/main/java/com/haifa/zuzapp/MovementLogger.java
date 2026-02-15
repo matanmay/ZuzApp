@@ -16,7 +16,7 @@ import java.util.Locale;
 public class MovementLogger {
 
     private static final String TAG = "MovementLogger";
-    private static final String CSV_HEADER = "SessionID,ExperimenterCode,Timestamp,ElapsedTimeMs,Magnitude,RawDelta\n";
+    private static final String CSV_HEADER = "SessionID,ExperimenterCode,Timestamp,ElapsedTimeMs,Magnitude,RawDelta,Pitch,Roll,Yaw\n";
     private static final int BATCH_SIZE = 20;
 
     private File currentLogFile;
@@ -38,7 +38,8 @@ public class MovementLogger {
     }
 
     /**
-     * Starts the session and creates the CSV file with the specific naming convention:
+     * Starts the session and creates the CSV file with the specific naming
+     * convention:
      * SubjectName__SessionID__Date_Time.csv
      *
      * ALSO logs session START to Supabase
@@ -83,15 +84,15 @@ public class MovementLogger {
                     sessionStartTime,
                     android.os.Build.MODEL,
                     android.os.Build.VERSION.RELEASE,
-                    currentLogFile.getAbsolutePath()
-            );
+                    currentLogFile.getAbsolutePath());
             Log.d(TAG, "Session START sent to Supabase");
         } catch (Exception e) {
             Log.e(TAG, "Exception in logSessionStartToSupabase", e);
         }
     }
 
-    public void logMovement(String sessionId, String experimenterCode, float magnitude, float rawDelta) {
+    public void logMovement(String sessionId, String experimenterCode, float magnitude, float rawDelta, float pitch,
+            float roll, float yaw) {
 
         long currentTime = System.currentTimeMillis();
         long elapsedTime = currentTime - sessionStartTime;
@@ -101,14 +102,16 @@ public class MovementLogger {
         // 1. Write to local CSV file (ALWAYS write, even if 0.0)
         // ---------------------------------------------------------
         if (writer != null) {
-            String entry = String.format(Locale.US, "%s,%s,%s,%d,%.4f,%.4f\n",
+            String entry = String.format(Locale.US, "%s,%s,%s,%d,%.4f,%.4f,%.4f,%.4f,%.4f\n",
                     sessionId,
                     experimenterCode,
                     timeString,
                     elapsedTime,
                     magnitude,
-                    rawDelta
-            );
+                    rawDelta,
+                    pitch,
+                    roll,
+                    yaw);
             try {
                 writer.append(entry);
                 writer.flush();
@@ -128,6 +131,9 @@ public class MovementLogger {
             supabaseRecord.put("elapsed_time_ms", elapsedTime);
             supabaseRecord.put("magnitude", magnitude);
             supabaseRecord.put("raw_delta", rawDelta);
+            supabaseRecord.put("pitch", pitch);
+            supabaseRecord.put("roll", roll);
+            supabaseRecord.put("yaw", yaw);
 
             supabaseBuffer.add(supabaseRecord);
 
@@ -141,7 +147,8 @@ public class MovementLogger {
     }
 
     private void uploadSupabaseBuffer() {
-        if (supabaseBuffer.isEmpty()) return;
+        if (supabaseBuffer.isEmpty())
+            return;
 
         try {
             JSONArray recordsArray = new JSONArray();
@@ -170,11 +177,10 @@ public class MovementLogger {
 
             supabaseClient.updateSessionEnd(
                     currentSessionId,
-                    currentExperimenterCode,  // Pass experimenter code too
+                    currentExperimenterCode, // Pass experimenter code too
                     endTimeStamp,
                     sessionEndTime,
-                    sessionDuration
-            );
+                    sessionDuration);
 
             Log.d(TAG, "Session END sent to Supabase");
         } catch (Exception e) {

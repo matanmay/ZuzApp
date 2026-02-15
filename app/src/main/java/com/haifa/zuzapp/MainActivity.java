@@ -35,6 +35,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     // Sensor Logic
     private SensorManager sensorManager;
     private Sensor gyroscope;
+    private Sensor rotation;
 
     // Logging Logic
     private MovementLogger logger;
@@ -42,6 +43,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private String currentSessionId;
 
     private float lastLoggedDelta = -1.0f;
+
+    // Rotation sensor values
+    private float pitch = 0.0f;
+    private float roll = 0.0f;
+    private float yaw = 0.0f;
 
     // Calibration variables
     private float baselineNoise = 0.0f;
@@ -96,6 +102,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         if (sensorManager != null) {
             gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+            rotation = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
             if (gyroscope == null) {
                 Toast.makeText(this, "Gyroscope not available on this device", Toast.LENGTH_LONG).show();
             }
@@ -108,12 +115,18 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             return;
         }
 
+        if (rotation == null) {
+            Toast.makeText(this, "Rotation Vector not available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         isCalibrating = true;
         calibrationSamples = 0;
         calibrationSum = 0.0f;
 
         // Register sensor listener if not already registered
         sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
+        sensorManager.registerListener(this, rotation, SensorManager.SENSOR_DELAY_GAME);
 
         // Update UI
         if (tvCalibrationStatus != null) {
@@ -193,6 +206,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 return;
             }
 
+            if (rotation != null) {
+                sensorManager.registerListener(this, rotation, SensorManager.SENSOR_DELAY_GAME);
+            }
+
             // UI Updates
             isRecording = true;
             etExperimenterCode.setEnabled(false);
@@ -236,7 +253,16 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     @Override
     public void onSensorChanged(SensorEvent event) {
         // Check that the event is from the gyroscope
-        if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
+        if (event.sensor.getType() == Sensor.TYPE_ROTATION_VECTOR) {
+            float[] rotationMatrix = new float[9];
+            SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values);
+            float[] orientation = new float[3];
+            SensorManager.getOrientation(rotationMatrix, orientation);
+            pitch = (float) Math.toDegrees(orientation[1]);
+            roll = (float) Math.toDegrees(orientation[2]);
+            yaw = (float) Math.toDegrees(orientation[0]);
+            Log.println(Log.DEBUG, "ROTATION", "Pitch: " + pitch + " Roll: " + roll + " Yaw: " + yaw);
+        } else if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
             float x = event.values[0];
             float y = event.values[1];
             float z = event.values[2];
@@ -286,7 +312,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Log the movement
             String expCode = etExperimenterCode.getText().toString();
-            logger.logMovement(currentSessionId, expCode, delta, rawDelta);
+            logger.logMovement(currentSessionId, expCode, delta, rawDelta, pitch, roll, yaw);
 
             lastLoggedDelta = delta;
         }

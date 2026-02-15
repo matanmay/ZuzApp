@@ -1,13 +1,16 @@
 # ZuzApp - Movement Logger & Experiment Tracker 📱📊
 
-**ZuzApp** is an Android application designed for scientific experiments and movement tracking. It captures real-time gyroscope data, filters sensor noise through calibration, and logs movement magnitude to both a local CSV file and a remote **Supabase** backend.
+**ZuzApp** is an Android application designed for scientific experiments and movement tracking. It captures real-time **gyroscope** (angular velocity) and **rotation vector** (orientation) data, filters sensor noise through calibration, and logs comprehensive movement data to both a local CSV file and a remote **Supabase** backend.
 
 ## 🚀 Features
 
-* **Real-time Sensor Monitoring**: Tracks device rotation using the Gyroscope sensor.
+* **Dual Sensor Monitoring**: 
+    * **Gyroscope**: Tracks angular velocity (rate of rotation) with direction preservation
+    * **Rotation Vector**: Captures absolute orientation (pitch, roll, yaw angles)
 * **Intelligent Calibration**:
-    * Calculates baseline noise when the device is stationary upon startup.
-    * Applies a noise threshold to ensure only significant movements are recorded.
+    * Calculates baseline gyroscope noise when the device is stationary upon startup.
+    * Establishes yaw baseline for relative rotation tracking.
+    * Applies a noise threshold (0.5 deg/s) to ensure only significant movements are recorded.
 * **Dual Logging System**:
     * **Local**: Saves data to CSV files in the format `Subject__Session__Timestamp.csv` stored in internal storage.
     * **Cloud**: Syncs session metadata and movement records to Supabase.
@@ -34,7 +37,7 @@ package com.haifa.zuzapp;
 
 public class Config {
     // Replace with your actual Supabase Project URL and Anon Key
-    private static final String SUPABASE_URL = "[https://your-project-id.supabase.co](https://your-project-id.supabase.co)";
+    private static final String SUPABASE_URL = "https://your-project-id.supabase.co";
     private static final String SUPABASE_ANON_KEY = "your-public-anon-key";
 
     public static String getSupabaseUrl() {
@@ -76,7 +79,12 @@ create table public.movement_records (
   experimenter_code text not null,
   timestamp text, -- Stores time as HH:mm:ss.SSS
   elapsed_time_ms bigint,
-  magnitude float
+  magnitude float,
+  raw_delta float,
+  pitch float,
+  roll float,
+  calibrated_yaw float,
+  yaw float -- raw yaw
 );
 
 ```
@@ -84,8 +92,8 @@ create table public.movement_records (
 ## 📖 Usage Guide
 
 1. **Calibration (Auto-start)**:
-* Upon opening the app, it attempts to calibrate the gyroscope.
-* **Keep the device perfectly still** until the status text turns green and says "Calibrated!".
+* Upon opening the app, it attempts to calibrate both the gyroscope and rotation vector sensor.
+* **Keep the device perfectly still** until the status text turns green and shows the calibrated baseline values.
 * *Note: You cannot start a session without calibration.*
 
 
@@ -116,25 +124,52 @@ Files are stored in the app's private files directory.
 **Format:**
 
 ```csv
-SessionID,ExperimenterCode,Timestamp,ElapsedTimeMs,Magnitude
-uuid-1234,SUBJ_01,14:30:01.050,50,12.45
+SessionID,ExperimenterCode,Timestamp,ElapsedTimeMs,Magnitude,RawDelta,Pitch,Roll,CalibratedYaw,RawYaw
+uuid-1234,SUBJ_01,14:30:01.050,50,12.45,12.60,5.23,-2.15,0.00,45.32
 ...
 
 ```
 
-### Sensor Math
+### Column Descriptions
 
-The app calculates the **Total Velocity Magnitude** from the Gyroscope (x, y, z):
+| Column | Type | Description |
+|--------|------|-------------|
+| SessionID | String | Unique session identifier |
+| ExperimenterCode | String | Subject/experimenter identifier |
+| Timestamp | Time | HH:mm:ss.SSS format |
+| ElapsedTimeMs | Long | Milliseconds since session start |
+| Magnitude | Float | Calibrated gyroscope magnitude (signed, deg/s) |
+| RawDelta | Float | Raw gyroscope reading (deg/s) |
+| Pitch | Float | Forward/backward tilt (degrees) |
+| Roll | Float | Left/right tilt (degrees) |
+| CalibratedYaw | Float | Rotation from calibrated position (degrees) |
+| RawYaw | Float | Absolute yaw angle (degrees) |
 
-1. **Calculate Magnitude (Radians):** 
-2. **Convert to Degrees:** 
-3. **Baseline Subtraction:** 
-4. **Thresholding:** If , record as .
+### Sensor Processing
+
+#### Gyroscope Data Processing:
+1. **Read Raw Value**: Z-axis gyroscope reading (radians/sec)
+2. **Convert to Degrees**: `rawDelta = toDegrees(z_axis_value)`
+3. **Subtract Baseline**: `magnitude = max(0, |rawDelta| - baselineNoise)`
+4. **Restore Sign**: `delta = copySign(magnitude, rawDelta)` (preserves rotation direction)
+5. **Apply Threshold**: If `|delta| < 0.5 deg/s`, set `delta = 0`
+
+#### Rotation Vector Processing:
+1. **Get Rotation Matrix**: Convert rotation vector to 3x3 rotation matrix
+2. **Extract Orientation**: Calculate pitch, roll, yaw from rotation matrix
+3. **Convert to Degrees**: All angles converted from radians to degrees
+4. **Calibrate Yaw**: `calibratedYaw = currentYaw - baselineYaw`
 
 ---
 
 ## 🏗 Architecture
 
-* **MainActivity**: Handles UI, `SensorEventListener`, and Calibration logic.
+* **MainActivity**: Handles UI, `SensorEventListener` for both gyroscope and rotation vector, and calibration logic.
 * **MovementLogger**: Manages the local `FileWriter` and buffers data for the network.
 * **SupabaseClient**: Handles REST API calls (POST/PATCH) using `HttpURLConnection` and a background `ExecutorService`.
+
+---
+
+## 📊 For More Details
+
+See [MOVEMENT_ALGORITHM_SUMMARY.md](MOVEMENT_ALGORITHM_SUMMARY.md) for a comprehensive technical overview of the movement tracking algorithm, including detailed sensor explanations, calibration methodology, and use cases.

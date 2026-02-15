@@ -129,7 +129,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     private void finishCalibration() {
-        baselineNoise = calibrationSum / CALIBRATION_SAMPLE_COUNT;
+        baselineNoise = Math.abs(calibrationSum) / CALIBRATION_SAMPLE_COUNT;
         isCalibrating = false;
 
         // Update UI
@@ -253,7 +253,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Handle Calibration Phase
             if (isCalibrating) {
-                calibrationSum += rawDelta;
+                calibrationSum += Math.abs(rawDelta);
                 calibrationSamples++;
 
                 // Update progress
@@ -273,10 +273,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 return;
 
             // Subtract baseline offset from calibration
-            float delta = rawDelta - baselineNoise;
+            float magnitude = Math.max(0.0f, Math.abs(rawDelta) - baselineNoise);
+            float delta = Math.copySign(magnitude, rawDelta);
 
             // Apply threshold to filter noise while preserving direction
-            if (Math.abs(delta) < MOVEMENT_THRESHOLD) {
+            if (Math.abs(delta) < Math.abs(MOVEMENT_THRESHOLD)) {
                 delta = 0.0f;
             }
 
@@ -285,7 +286,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Log the movement
             String expCode = etExperimenterCode.getText().toString();
-            logger.logMovement(currentSessionId, expCode, delta);
+            logger.logMovement(currentSessionId, expCode, delta, rawDelta);
 
             lastLoggedDelta = delta;
         }

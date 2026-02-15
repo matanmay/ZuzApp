@@ -51,9 +51,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     // Calibration variables
     private float baselineNoise = 0.0f;
+    private float baselineYaw = 0.0f;
     private boolean isCalibrating = false;
     private int calibrationSamples = 0;
     private float calibrationSum = 0.0f;
+    private float yawCalibrationSum = 0.0f;
     private static final int CALIBRATION_SAMPLE_COUNT = 50;
 
     // Threshold to filter noise (applied after baseline subtraction)
@@ -123,6 +125,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         isCalibrating = true;
         calibrationSamples = 0;
         calibrationSum = 0.0f;
+        yawCalibrationSum = 0.0f;
 
         // Register sensor listener if not already registered
         sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
@@ -143,16 +146,18 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private void finishCalibration() {
         baselineNoise = Math.abs(calibrationSum) / CALIBRATION_SAMPLE_COUNT;
+        baselineYaw = yawCalibrationSum / CALIBRATION_SAMPLE_COUNT;
         isCalibrating = false;
 
         // Update UI
         if (tvCalibrationStatus != null) {
-            tvCalibrationStatus.setText(String.format("Calibrated! Baseline: %.2f deg/s", baselineNoise));
+            tvCalibrationStatus
+                    .setText(String.format("Calibrated! Baseline: %.2f deg/s, Yaw: %.2f°", baselineNoise, baselineYaw));
             tvCalibrationStatus.setTextColor(Color.parseColor("#4CAF50")); // Green
         }
 
         Toast.makeText(this,
-                String.format("Calibration complete! Baseline: %.2f deg/s", baselineNoise),
+                String.format("Calibration complete! Baseline: %.2f deg/s, Yaw: %.2f°", baselineNoise, baselineYaw),
                 Toast.LENGTH_LONG).show();
 
         if (btnCalibrate != null) {
@@ -280,7 +285,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // Handle Calibration Phase
             if (isCalibrating) {
                 calibrationSum += Math.abs(rawDelta);
+                yawCalibrationSum += Math.abs(yaw);
                 calibrationSamples++;
+
+
 
                 // Update progress
                 if (tvCalibrationStatus != null) {
@@ -310,9 +318,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // Update the UI
             tvSensorData.setText(String.format("Gyro Delta: %.2f deg/s (Raw: %.2f)", delta, rawDelta));
 
+            // Apply yaw calibration (subtract baseline)
+            float calibratedYaw = Math.abs(Math.abs(yaw) - Math.abs(baselineYaw));
+            calibratedYaw = Math.copySign(calibratedYaw, yaw);
+            tvSensorData.append(String.format(" | Yaw: %.2f°", calibratedYaw));
+
             // Log the movement
             String expCode = etExperimenterCode.getText().toString();
-            logger.logMovement(currentSessionId, expCode, delta, rawDelta, pitch, roll, yaw);
+            logger.logMovement(currentSessionId, expCode, delta, rawDelta, pitch, roll, calibratedYaw, yaw);
 
             lastLoggedDelta = delta;
         }

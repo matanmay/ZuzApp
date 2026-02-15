@@ -44,6 +44,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private float lastLoggedDelta = -1.0f;
     private long lastTimestamp = 0;
+    private float cumulativeAngle = 0.0f; // Accumulated rotation angle
+    private float relativeAngle = 0.0f; // Relative rotation angle
 
     // Rotation sensor values
     private float pitch = 0.0f;
@@ -220,6 +222,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // UI Updates
             isRecording = true;
+            cumulativeAngle = 0.0f; // Reset cumulative angle for new session
+            lastTimestamp = 0; // Reset timestamp for angle calculation
             etExperimenterCode.setEnabled(false);
             etSessionId.setEnabled(false);
             btnToggleSession.setText("STOP SESSION");
@@ -326,12 +330,28 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Calculate angle in degrees by multiplying magnitude delta with delta seconds
             float angleInDegrees = delta * deltaSeconds;
-            Log.println(Log.DEBUG, "ANGLE", "Angle: " + angleInDegrees);
+
+            // Accumulate the angle to get total rotation from session start
+            cumulativeAngle += angleInDegrees;
+            relativeAngle += angleInDegrees;
+            if (angleInDegrees == 0.0f) {
+                relativeAngle = 0.0f;
+            }
+
+            Log.println(Log.DEBUG, "ANGLE",
+                    "Incremental Angle: " + angleInDegrees + " | Cumulative: " + cumulativeAngle);
+            Log.println(Log.DEBUG, "RELATIVE ANGLE",
+                    "Relative Angle: " + relativeAngle);
 
             // Update the UI
-            tvSensorData.setText(String.format("Gyro Delta: %.2f deg/s (Raw: %.2f) | Angle: %.4f°", delta, rawDelta,
-                    angleInDegrees));
+            // tvSensorData.setText(String.format("Gyro Delta: %.2f deg/s (Raw: %.2f) |
+            // Angle: %.4f°", delta, rawDelta,
+            // angleInDegrees));
+            // tvSensorData.setText(String.format("Gyro: %.2f deg/s | Cumulative: %.2f° |
+            // Inc: %.4f°", delta,
+            // cumulativeAngle, angleInDegrees));
 
+            tvSensorData.setText(String.format("RAngle: %.4f°", relativeAngle));
             // Apply yaw calibration (subtract baseline)
             float calibratedYaw = Math.abs(Math.abs(yaw) - Math.abs(baselineYaw));
             calibratedYaw = Math.copySign(calibratedYaw, yaw);
@@ -339,7 +359,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Log the movement
             String expCode = etExperimenterCode.getText().toString();
-            logger.logMovement(currentSessionId, expCode, delta, rawDelta, angleInDegrees, pitch, roll, calibratedYaw,
+            logger.logMovement(currentSessionId, expCode, delta, rawDelta, angleInDegrees, cumulativeAngle,
+                    relativeAngle, pitch, roll,
+                    calibratedYaw,
                     yaw);
 
             lastLoggedDelta = delta;

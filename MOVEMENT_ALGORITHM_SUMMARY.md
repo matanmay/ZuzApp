@@ -31,9 +31,10 @@ The app automatically calibrates when it starts. Users can also manually recalib
 - **Formula**: `baselineNoise = sum(|rawDelta|) / 50`
 
 #### 2. Yaw Baseline
-- **Method**: Captures the current yaw angle at the end of calibration
-- **Purpose**: Establishes a "zero point" for relative yaw measurements
-- **Formula**: `baselineYaw = currentYaw` (at calibration completion)
+- **Sample Count**: 50 samples
+- **Method**: Averages the absolute value of yaw readings during calibration
+- **Purpose**: Establishes a "reference point" for relative yaw measurements
+- **Formula**: `baselineYaw = sum(|yaw|) / 50`
 
 ### Calibration Requirements
 - Device must be kept completely still

@@ -248,7 +248,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         etExperimenterCode.setEnabled(true);
         etSessionId.setEnabled(true);
         btnToggleSession.setText("START SESSION");
-        btnToggleSession.setBackgroundColor(getColor(com.google.android.material.R.color.design_default_color_primary));
+        btnToggleSession.setBackgroundColor(Color.BLUE);
 
         tvStatus.setText("Saved to: " + logger.getFilePath());
         tvSensorData.setText("Gyro: 0.00 deg/s");

@@ -43,6 +43,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private String currentSessionId;
 
     private float lastLoggedDelta = -1.0f;
+    private long lastTimestamp = 0;
 
     // Rotation sensor values
     private float pitch = 0.0f;
@@ -213,8 +214,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             if (rotation != null) {
                 sensorManager.registerListener(this, rotation, SensorManager.SENSOR_DELAY_GAME);
-            }
-            else{
+            } else {
                 Toast.makeText(this, "Rotation Vector not available", Toast.LENGTH_SHORT).show();
             }
 
@@ -291,8 +291,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 yawCalibrationSum += Math.abs(yaw);
                 calibrationSamples++;
 
-
-
                 // Update progress
                 if (tvCalibrationStatus != null) {
                     tvCalibrationStatus.setText(String.format("Calibrating... %d/%d samples",
@@ -309,6 +307,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             if (!isRecording)
                 return;
 
+            // Calculate time delta in seconds
+            long currentTimestamp = event.timestamp;
+            float deltaSeconds = 0.0f;
+            if (lastTimestamp != 0) {
+                deltaSeconds = (currentTimestamp - lastTimestamp) / 1_000_000_000.0f; // Convert nanoseconds to seconds
+            }
+            lastTimestamp = currentTimestamp;
+
             // Subtract baseline offset from calibration
             float magnitude = Math.max(0.0f, Math.abs(rawDelta) - baselineNoise);
             float delta = Math.copySign(magnitude, rawDelta);
@@ -318,8 +324,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 delta = 0.0f;
             }
 
+            // Calculate angle in degrees by multiplying magnitude delta with delta seconds
+            float angleInDegrees = delta * deltaSeconds;
+            Log.println(Log.DEBUG, "ANGLE", "Angle: " + angleInDegrees);
+
             // Update the UI
-            tvSensorData.setText(String.format("Gyro Delta: %.2f deg/s (Raw: %.2f)", delta, rawDelta));
+            tvSensorData.setText(String.format("Gyro Delta: %.2f deg/s (Raw: %.2f) | Angle: %.4f°", delta, rawDelta,
+                    angleInDegrees));
 
             // Apply yaw calibration (subtract baseline)
             float calibratedYaw = Math.abs(Math.abs(yaw) - Math.abs(baselineYaw));
@@ -328,7 +339,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Log the movement
             String expCode = etExperimenterCode.getText().toString();
-            logger.logMovement(currentSessionId, expCode, delta, rawDelta, pitch, roll, calibratedYaw, yaw);
+            logger.logMovement(currentSessionId, expCode, delta, rawDelta, angleInDegrees, pitch, roll, calibratedYaw,
+                    yaw);
 
             lastLoggedDelta = delta;
         }

@@ -16,7 +16,7 @@ import java.util.Locale;
 public class MovementLogger {
 
     private static final String TAG = "MovementLogger";
-    private static final String CSV_HEADER = "SessionID,ExperimenterCode,Timestamp,ElapsedTimeMs,Magnitude,RawDelta,Pitch,Roll,CalibratedYaw,RawYaw\n";
+    private static final String CSV_HEADER = "SessionID,ExperimenterCode,Timestamp,ElapsedTimeMs,Magnitude,RawDelta,AngleInDegrees,Pitch,Roll,CalibratedYaw,RawYaw\n";
     private static final int BATCH_SIZE = 20;
 
     private File currentLogFile;
@@ -91,7 +91,8 @@ public class MovementLogger {
         }
     }
 
-    public void logMovement(String sessionId, String experimenterCode, float magnitude, float rawDelta, float pitch,
+    public void logMovement(String sessionId, String experimenterCode, float magnitude, float rawDelta,
+            float angleInDegrees, float pitch,
             float roll, float calibratedYaw, float rawYaw) {
 
         long currentTime = System.currentTimeMillis();
@@ -102,13 +103,14 @@ public class MovementLogger {
         // 1. Write to local CSV file (ALWAYS write, even if 0.0)
         // ---------------------------------------------------------
         if (writer != null) {
-            String entry = String.format(Locale.US, "%s,%s,%s,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
+            String entry = String.format(Locale.US, "%s,%s,%s,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
                     sessionId,
                     experimenterCode,
                     timeString,
                     elapsedTime,
                     magnitude,
                     rawDelta,
+                    angleInDegrees,
                     pitch,
                     roll,
                     calibratedYaw,
@@ -132,6 +134,7 @@ public class MovementLogger {
             supabaseRecord.put("elapsed_time_ms", elapsedTime);
             supabaseRecord.put("magnitude", magnitude);
             supabaseRecord.put("raw_delta", rawDelta);
+            supabaseRecord.put("angle_in_degrees", angleInDegrees);
             supabaseRecord.put("pitch", pitch);
             supabaseRecord.put("roll", roll);
             supabaseRecord.put("calibrated_yaw", calibratedYaw);

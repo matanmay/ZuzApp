@@ -146,7 +146,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private void finishCalibration() {
         baselineNoise = Math.abs(calibrationSum) / CALIBRATION_SAMPLE_COUNT;
-        baselineYaw = yawCalibrationSum / CALIBRATION_SAMPLE_COUNT;
+        baselineYaw = Math.abs(yawCalibrationSum) / CALIBRATION_SAMPLE_COUNT;
         isCalibrating = false;
 
         // Update UI
@@ -213,6 +213,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             if (rotation != null) {
                 sensorManager.registerListener(this, rotation, SensorManager.SENSOR_DELAY_GAME);
+            }
+            else{
+                Toast.makeText(this, "Rotation Vector not available", Toast.LENGTH_SHORT).show();
             }
 
             // UI Updates

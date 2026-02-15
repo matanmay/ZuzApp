@@ -47,13 +47,16 @@ The app automatically calibrates when it starts. Users can also manually recalib
 
 1. **Read Raw Value**: Z-axis gyroscope reading (radians/sec)
 2. **Convert to Degrees**: `rawDelta = toDegrees(z_axis_value)`
-3. **Subtract Baseline**: `magnitude = max(0, |rawDelta| - baselineNoise)`
-4. **Restore Sign**: `delta = copySign(magnitude, rawDelta)`
-5. **Apply Threshold**: If `|delta| < 0.5 deg/s`, set `delta = 0`
+3. **Calculate Time Delta**: `deltaSeconds = (currentTimestamp - lastTimestamp) / 1,000,000,000`
+4. **Subtract Baseline**: `magnitude = max(0, |rawDelta| - baselineNoise)`
+5. **Restore Sign**: `delta = copySign(magnitude, rawDelta)`
+6. **Apply Threshold**: If `|delta| < 0.5 deg/s`, set `delta = 0`
+7. **Calculate Angle**: `angleInDegrees = delta × deltaSeconds`
 
 **Result**: 
-- `delta`: Calibrated angular velocity with direction (positive/negative)
-- `rawDelta`: Original uncalibrated reading
+- `delta`: Calibrated angular velocity with direction (deg/s)
+- `rawDelta`: Original uncalibrated angular velocity (deg/s)
+- `angleInDegrees`: Actual rotation angle during this time interval (degrees)
 
 ### Rotation Vector Data Processing
 
@@ -79,8 +82,9 @@ Each movement sample is logged with the following columns:
 | ExperimenterCode | String | Subject/experimenter identifier |
 | Timestamp | Time | HH:mm:ss.SSS format |
 | ElapsedTimeMs | Long | Milliseconds since session start |
-| Magnitude | Float | Calibrated gyroscope magnitude (signed) |
+| Magnitude | Float | Calibrated gyroscope magnitude (signed, deg/s) |
 | RawDelta | Float | Raw gyroscope reading (deg/s) |
+| AngleInDegrees | Float | Actual rotation angle during interval (degrees) |
 | Pitch | Float | Forward/backward tilt (degrees) |
 | Roll | Float | Left/right tilt (degrees) |
 | CalibratedYaw | Float | Rotation from calibrated position (degrees) |
@@ -139,7 +143,7 @@ Each movement sample is logged with the following columns:
 1. **Gyroscope Drift**: Long sessions may accumulate integration error (mitigated by calibration)
 2. **Magnetic Interference**: Yaw angle may be affected by nearby magnetic fields
 3. **Single Axis Focus**: Currently primarily uses Z-axis rotation
-4. **No Integration**: Gyroscope data not integrated to calculate angle (relies on rotation vector for absolute angle)
+4. **Time-Based Integration**: Angle calculation depends on consistent sensor timing
 
 ## Session Workflow
 
@@ -169,10 +173,33 @@ Each movement sample is logged with the following columns:
 - Graceful fallback if sensors unavailable
 - Exception catching for file I/O and network operations
 
+## Angle Calculation Details
+
+### How AngleInDegrees Works
+The `angleInDegrees` value represents the **actual rotation that occurred** during each sensor reading interval:
+
+- **Formula**: `angleInDegrees = delta × deltaSeconds`
+- **delta**: Angular velocity (degrees per second)
+- **deltaSeconds**: Time interval between sensor readings (seconds)
+- **Result**: Actual angle rotation during that specific time period (degrees)
+
+### Example
+If the sensor reads:
+- Angular velocity (`delta`) = 30 deg/s
+- Time since last reading (`deltaSeconds`) = 0.016 seconds (~60 Hz)
+- Then: `angleInDegrees = 30 × 0.016 = 0.48 degrees`
+
+This means the device rotated 0.48 degrees during that 16ms interval.
+
+### Integration vs. Absolute Angle
+- **angleInDegrees**: Incremental rotation per sensor reading (from gyroscope)
+- **CalibratedYaw**: Absolute rotation angle from starting position (from rotation vector)
+- These provide complementary information about movement
+
 ## Future Enhancement Possibilities
 
 1. **Multi-Axis Analysis**: Incorporate X and Y gyroscope axes for more complex movements
-2. **Gyroscope Integration**: Calculate angle by integrating gyroscope data (compare with rotation vector)
+2. **Cumulative Angle Tracking**: Sum angleInDegrees over time to compare with rotation vector
 3. **Movement Classification**: Detect specific movement patterns (spinning, rocking, etc.)
 4. **Real-time Visualization**: Display movement graphs during recording
 5. **Adaptive Thresholding**: Adjust noise threshold based on environment

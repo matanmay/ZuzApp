@@ -1,110 +1,140 @@
-# ZuzApp – Movement Experiment Logger
+# ZuzApp - Movement Logger & Experiment Tracker 📱📊
 
-ZuzApp is a native Android application designed for scientific experiments that require tracking device movement.  
-The app captures accelerometer data, calculates movement magnitude, filters out noise, and logs the results to a CSV file.
+**ZuzApp** is an Android application designed for scientific experiments and movement tracking. It captures real-time gyroscope data, filters sensor noise through calibration, and logs movement magnitude to both a local CSV file and a remote **Supabase** backend.
 
----
+## 🚀 Features
 
-## Features
-
-- **Real-time Monitoring**  
-  Displays live acceleration delta values on screen.
-
-- **Noise Threshold Filtering**  
-  Automatically sets movement to `0.00` if the change is below a threshold (`0.5f`) to filter out minor vibrations.
-
-- **Data Logging**  
-  Records experiment data to CSV files in the device's internal storage.
-
-- **Session Management**  
-  Allows manual entry of Experimenter Code and Session ID (or auto-generates a UUID).
-
-- **Battery Efficiency**  
-  Automatically unregisters sensors when the session is stopped or paused (if not recording).
+* **Real-time Sensor Monitoring**: Tracks device rotation using the Gyroscope sensor.
+* **Intelligent Calibration**:
+    * Calculates baseline noise when the device is stationary upon startup.
+    * Applies a noise threshold to ensure only significant movements are recorded.
+* **Dual Logging System**:
+    * **Local**: Saves data to CSV files in the format `Subject__Session__Timestamp.csv` stored in internal storage.
+    * **Cloud**: Syncs session metadata and movement records to Supabase.
+* **Optimized Performance**:
+    * Uploads movement records in batches (size 20) to reduce network overhead.
+    * Keeps the screen active during recording to prevent sensor dozing.
+* **Session Management**: Supports manual Session IDs or auto-generates UUIDs.
 
 ---
 
-## Technical Stack
+## 🛠 Installation & Setup
 
-- **Language:** Java  
-- **Minimum SDK:** Android 7.0 (API 24)  
-- **Target SDK:** Android 14 (API 34)  
-- **Architecture:** MVVM-lite (Activity + Helper Classes)  
-- **Build System:** Gradle  
+### 1. Prerequisites
+* Android Studio.
+* A Supabase project.
 
----
+### 2. Configure Supabase Credentials
+The `SupabaseClient.java` relies on a `Config` class to fetch credentials. This file is **required** for the app to build.
 
-## Installation
-
-1. Clone or download this repository.
-2. Open **Android Studio**.
-3. Select **File > Open** and navigate to the project root directory.
-4. Wait for the Gradle sync to complete.
-5. Connect an Android device or start an Emulator.
-6. Click **Run**.
-
----
-
-## How to Use
-
-1. **Enter Experimenter Code**  
-   Type the ID of the person conducting the experiment.
-
-2. **Enter Session ID (Optional)**  
-   Type a specific session ID.  
-   If left blank, a random UUID will be generated automatically.
-
-3. **Start Session**  
-   Click the **Start Session** button.  
-   - The button will turn red  
-   - The screen will stay on  
-
-4. **Perform Experiment**  
-   Move the device as required.
-
-5. **Stop Session**  
-   Click **Stop Session** to save the data.
-
----
-
-## Accessing Data Logs
-
-The application saves data to **app-specific internal storage** to ensure privacy and avoid external storage permission issues.
-
-### Steps to retrieve CSV files:
-
-1. Connect your Android device to your PC or Mac.
-2. Open **Android Studio**.
-3. Go to **View > Tool Windows > Device File Explorer**.
-4. Navigate to:
-5. Right-click the desired `.csv` file (e.g. `Experiment_20231027_103000.csv`).
-6. Select **Save As…** to download it.
-
----
-
-## Data Format
-
-The output CSV contains the following columns:
-
-| Column            | Description                                           |
-|-------------------|-------------------------------------------------------|
-| SessionID         | Unique identifier for the specific run                |
-| ExperimenterCode  | ID entered by the user                                |
-| Timestamp         | Absolute wall-clock time (`HH:mm:ss.SSS`)             |
-| ElapsedTimeMs     | Milliseconds elapsed since **Start Session**          |
-| Magnitude         | Calculated movement delta (|acceleration − gravity|) |
-
----
-
-## Logic Details
-
-The movement is calculated using the linear magnitude of the accelerometer vector:
+Create a new file `Config.java` in the package `com.haifa.zuzapp`:
 
 ```java
-double magnitude = Math.sqrt(x*x + y*y + z*z);
-float delta = (float) Math.abs(magnitude - 9.81);
+package com.haifa.zuzapp;
 
-// Threshold Filter
-if (delta < 0.5f) {
- delta = 0.0f;
+public class Config {
+    // Replace with your actual Supabase Project URL and Anon Key
+    private static final String SUPABASE_URL = "[https://your-project-id.supabase.co](https://your-project-id.supabase.co)";
+    private static final String SUPABASE_ANON_KEY = "your-public-anon-key";
+
+    public static String getSupabaseUrl() {
+        return SUPABASE_URL;
+    }
+
+    public static String getSupabaseAnonKey() {
+        return SUPABASE_ANON_KEY;
+    }
 }
+
+```
+
+### 3. Database Schema
+
+You must create two tables in your Supabase project to match the JSON objects constructed in `SupabaseClient.java`. Run the following SQL in your Supabase SQL Editor:
+
+```sql
+-- Table: sessions
+create table public.sessions (
+  session_id text not null,
+  experimenter_code text not null,
+  start_time text,
+  start_time_millis bigint,
+  end_time text,
+  end_time_millis bigint,
+  duration_ms bigint,
+  status text, -- 'started' or 'completed'
+  device_model text,
+  android_version text,
+  file_path text,
+  primary key (session_id, experimenter_code)
+);
+
+-- Table: movement_records
+create table public.movement_records (
+  id bigint generated by default as identity primary key,
+  session_id text not null,
+  experimenter_code text not null,
+  timestamp text, -- Stores time as HH:mm:ss.SSS
+  elapsed_time_ms bigint,
+  magnitude float
+);
+
+```
+
+## 📖 Usage Guide
+
+1. **Calibration (Auto-start)**:
+* Upon opening the app, it attempts to calibrate the gyroscope.
+* **Keep the device perfectly still** until the status text turns green and says "Calibrated!".
+* *Note: You cannot start a session without calibration.*
+
+
+2. **Setup Session**:
+* **Experimenter Code**: Enter the subject name or researcher code (Required).
+* **Session ID**: Leave blank to auto-generate a generic UUID, or type a specific ID.
+
+
+3. **Recording**:
+* Press **START SESSION**.
+* Perform the movement tasks. The screen shows the current Gyro Delta (Degrees/second).
+* Data is saved locally and uploaded to the cloud in batches.
+
+
+4. **Stopping**:
+* Press **STOP SESSION**.
+* The app finalizes the CSV file and updates the session end time/duration in the database.
+
+
+
+---
+
+## 📂 Data Output Format
+
+### Local CSV
+
+Files are stored in the app's private files directory.
+**Format:**
+
+```csv
+SessionID,ExperimenterCode,Timestamp,ElapsedTimeMs,Magnitude
+uuid-1234,SUBJ_01,14:30:01.050,50,12.45
+...
+
+```
+
+### Sensor Math
+
+The app calculates the **Total Velocity Magnitude** from the Gyroscope (x, y, z):
+
+1. **Calculate Magnitude (Radians):** 
+2. **Convert to Degrees:** 
+3. **Baseline Subtraction:** 
+4. **Thresholding:** If , record as .
+
+---
+
+## 🏗 Architecture
+
+* **MainActivity**: Handles UI, `SensorEventListener`, and Calibration logic.
+* **MovementLogger**: Manages the local `FileWriter` and buffers data for the network.
+* **SupabaseClient**: Handles REST API calls (POST/PATCH) using `HttpURLConnection` and a background `ExecutorService`.

@@ -7,6 +7,7 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -240,13 +241,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             float y = event.values[1];
             float z = event.values[2];
 
-            // 1. Calculate Total Velocity Magnitude (Result is in Radians per Second)
-            double magnitudeRad = Math.sqrt(x * x + y * y + z * z);
+            // Log.println(Log.DEBUG, "GYRO", "X: " + x + " Y: " + y + " Z: " + z);
+            // Log.println(Log.DEBUG, "GYROZ", " Z: " + z);
 
-            // 2. Convert from Radians to Degrees
-            double magnitudeDeg = Math.toDegrees(magnitudeRad);
+            // Track Z-axis rotation (can be positive or negative for direction)
+            // Convert from radians/sec to degrees/sec
+            float rawDelta = (float) Math.toDegrees(z);
 
-            float rawDelta = (float) magnitudeDeg;
+            // Log.println(Log.DEBUG, "GYROZ", " Z: " + Math.toDegrees(z));
+            // Log.println(Log.DEBUG, "GYROX", " X: " + Math.toDegrees(x));
 
             // Handle Calibration Phase
             if (isCalibrating) {
@@ -266,18 +269,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
 
             // If not recording, just return (but don't show data)
-            if (!isRecording) return;
+            if (!isRecording)
+                return;
 
-            // 3. Subtract baseline noise
+            // Subtract baseline offset from calibration
             float delta = rawDelta - baselineNoise;
 
-            // 4. Apply threshold to filter remaining noise
-            if (delta < MOVEMENT_THRESHOLD) {
-                delta = 0.0f;
-            }
-
-            // Ensure delta is not negative
-            if (delta < 0) {
+            // Apply threshold to filter noise while preserving direction
+            if (Math.abs(delta) < MOVEMENT_THRESHOLD) {
                 delta = 0.0f;
             }
 
